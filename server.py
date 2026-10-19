@@ -1,16 +1,3 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-import re
-import uvicorn
-
-# 1. FastAPI 미니 서버 생성
-app = FastAPI(title="가계부 자동화 서버")
-
-# 2. 앱에서 받을 데이터의 형태(구조) 정의
-class SMSRequest(BaseModel):
-    text: str
-
-# 3. 아까 완성한 파싱 로직 (그대로 가져옴)
 def parse_payment_sms(text: str):
     if '입금' in text or '취소' in text:
         transaction_type = "수입"
@@ -24,6 +11,7 @@ def parse_payment_sms(text: str):
     payment_method = "알 수 없음"
     amount = 0
     
+    # 결제 수단(카드사) 찾기
     for line in lines:
         if any(keyword in line for keyword in ['카드', '은행', '뱅크']):
             words = line.split()
@@ -34,14 +22,25 @@ def parse_payment_sms(text: str):
         if payment_method != "알 수 없음":
             break
             
+    # 1. 금액 찾기
     for i, line in enumerate(lines):
-        if ('원' in line or re.fullmatch(r'[0-9,]+', line.strip())) and '잔액' not in line:
+        if ('원' in line or re.fullmatch(r'[0-9,]+', line.strip())) and '잔액' not in line and '누적' not in line:
             amount_match = re.search(r'([0-9,]+)', line)
             if amount_match:
                 amount = int(amount_match.group(1).replace(',', ''))
-            if i > 0:
-                shop_name = lines[i-1]
             break
+            
+    # 2. 상호명 찾기 (똑똑한 필터링)
+    for line in lines:
+        if '카드' in line or '승인' in line or '취소' in line: continue
+        if '*' in line: continue # 이름 마스킹(문*철) 제외
+        if '원' in line and bool(re.search(r'[0-9]', line)): continue # 133,000원 등 숫자+원 제외
+        if '/' in line or ':' in line: continue # 날짜와 시간(07/31 11:50) 제외
+        if '누적' in line or '잔액' in line: continue
+        
+        # 위 조건에 걸리지 않은 순수한 글자 줄을 상호명으로 채택!
+        shop_name = line.strip()
+        break
             
     final_amount = amount if transaction_type == "수입" else -amount
             
@@ -51,20 +50,3 @@ def parse_payment_sms(text: str):
         "title": shop_name,
         "amount": final_amount
     }
-
-# 4. 앱에서 데이터를 쏠 '주소(Endpoint)' 만들기
-@app.post("/api/parse")
-def parse_sms_endpoint(request: SMSRequest):
-    print(f"💌 앱에서 도착한 문자: {request.text}")
-    result = parse_payment_sms(request.text)
-    print(f"🔎 금액 해독 결과: {result}")
-    
-    return {
-        "status": "success",
-        "data": result
-    }
-
-# 5. 서버 실행 명령 (▷ 버튼을 누르면 작동)
-if __name__ == "__main__":
-    print("🚀 가계부 미니 서버가 시작됩니다! (포트: 8000)")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
