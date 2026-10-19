@@ -35,7 +35,7 @@ def parse_payment_sms(text: str):
             break
             
     for i, line in enumerate(lines):
-        if '원' in line and '잔액' not in line:
+        if ('원' in line or re.fullmatch(r'[0-9,]+', line.strip())) and '잔액' not in line:
             amount_match = re.search(r'([0-9,]+)', line)
             if amount_match:
                 amount = int(amount_match.group(1).replace(',', ''))
@@ -55,10 +55,10 @@ def parse_payment_sms(text: str):
 # 4. 앱에서 데이터를 쏠 '주소(Endpoint)' 만들기
 @app.post("/api/parse")
 def parse_sms_endpoint(request: SMSRequest):
-    # 플러터 앱에서 보낸 문자 텍스트를 파싱 로직에 넣고 돌림
+    print(f"💌 앱에서 도착한 문자: {request.text}")
     result = parse_payment_sms(request.text)
+    print(f"🔎 금액 해독 결과: {result}")
     
-    # 처리된 예쁜 데이터를 다시 앱으로 돌려줌
     return {
         "status": "success",
         "data": result
